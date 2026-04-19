@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import readline from "readline";
 import { TOOLS, executeTool } from "./tools/index.js";
 import { MODEL, MAX_TOKENS, MAX_TURNS, SYSTEM, loadConfig } from "./config.js";
+import { todo } from "./todo.js";
 
 const { apiKey, baseUrl } = loadConfig();
 const client = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
@@ -64,20 +65,27 @@ async function runTurn(): Promise<void> {
       return;
     }
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    const toolResults: Array<Anthropic.ToolResultBlockParam | Anthropic.TextBlockParam> = [];
+    let usedTodo = false;
 
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
-      const input = block.input as Record<string, string>;
-      console.log(`[tool] ${block.name}(${JSON.stringify(input)})`);
+      const input = block.input as Record<string, unknown>;
       const [output, isError] = executeTool(block.name, input);
-      console.log(`  → ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
+      console.log(`  → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
       toolResults.push({
         type: "tool_result",
         tool_use_id: block.id,
         content: output,
         is_error: isError,
       });
+      if (block.name === "todo") usedTodo = true;
+    }
+
+    if (!usedTodo) {
+      todo.noteRoundWithoutUpdate();
+      const reminder = todo.reminder();
+      if (reminder) toolResults.unshift({ type: "text", text: reminder });
     }
 
     messages.push({ role: "assistant", content: response.content });

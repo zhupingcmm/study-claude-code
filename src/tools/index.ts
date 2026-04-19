@@ -1,7 +1,7 @@
 import fs from "fs";
 import { spawnSync } from "child_process";
 import type Anthropic from "@anthropic-ai/sdk";
-import { todo, type TodoStatus } from "../todo.js";
+import { todo } from "../todo.js";
 
 export const READ_TOOL: Anthropic.Tool = {
   name: "read_file",
@@ -40,69 +40,58 @@ export const BASH_TOOL: Anthropic.Tool = {
   },
 };
 
-export const ADD_TODO_TOOL: Anthropic.Tool = {
-  name: "add_todo",
-  description: "添加一个新任务到 TodoList，返回任务 id。",
+export const TODO_TOOL: Anthropic.Tool = {
+  name: "todo",
+  description: "Rewrite the current session plan for multi-step work.",
   input_schema: {
     type: "object",
     properties: {
-      content: { type: "string", description: "任务描述" },
-    },
-    required: ["content"],
-  },
-};
-
-export const UPDATE_TODO_TOOL: Anthropic.Tool = {
-  name: "update_todo",
-  description: "更新 TodoList 中某个任务的状态。",
-  input_schema: {
-    type: "object",
-    properties: {
-      id: { type: "string", description: "任务 id" },
-      status: {
-        type: "string",
-        enum: ["pending", "in_progress", "done"],
-        description: "新状态",
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            content: { type: "string" },
+            status: {
+              type: "string",
+              enum: ["pending", "in_progress", "completed"],
+            },
+            activeForm: {
+              type: "string",
+              description: "Optional present-continuous label.",
+            },
+          },
+          required: ["content", "status"],
+        },
       },
     },
-    required: ["id", "status"],
+    required: ["items"],
   },
 };
 
-export const TOOLS: Anthropic.Tool[] = [
-  READ_TOOL,
-  WRITE_TOOL,
-  BASH_TOOL,
-  ADD_TODO_TOOL,
-  UPDATE_TODO_TOOL,
-];
+export const TOOLS: Anthropic.Tool[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
 
-type ToolInput = Record<string, string>;
+type ToolInput = Record<string, unknown>;
 
 export function executeTool(name: string, input: ToolInput): [string, boolean] {
   try {
     if (name === "read_file") {
-      return [fs.readFileSync(input.path, "utf-8"), false];
+      return [fs.readFileSync(input.path as string, "utf-8"), false];
     } else if (name === "write_file") {
-      fs.writeFileSync(input.path, input.content, "utf-8");
+      fs.writeFileSync(input.path as string, input.content as string, "utf-8");
       return [`Written to ${input.path}`, false];
     } else if (name === "bash_exec") {
-      const r = spawnSync(input.command, {
+      const r = spawnSync(input.command as string, {
         shell: true,
         timeout: 30_000,
         encoding: "utf-8",
       });
       if (r.error) return [String(r.error), true];
       return [(r.stdout ?? "") + (r.stderr ?? ""), false];
-    } else if (name === "add_todo") {
-      const item = todo.add(input.content);
-      todo.display();
-      return [JSON.stringify(item), false];
-    } else if (name === "update_todo") {
-      const item = todo.update(input.id, input.status as TodoStatus);
-      if (!item) return [`Todo id ${input.id} not found`, true];
-      todo.display();
-      return [JSON.stringify(item), false];
+    } else if (name === "todo") {
+      const result = todo.update(input.items as unknown[]);
+      console.log("\n" + result);
+      return [result, false];
     } else {
       return [`Unknown tool: ${name}`, true];
     }
