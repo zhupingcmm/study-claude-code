@@ -13,16 +13,44 @@ function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => rl.question(prompt, resolve));
 }
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function startSpinner(label: string): () => void {
+  let i = 0;
+  const id = setInterval(() => {
+    process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${label}`);
+  }, 80);
+  return () => {
+    clearInterval(id);
+    process.stdout.write("\r\x1b[2K");
+  };
+}
+
+async function createWithRetry(params: Parameters<typeof client.messages.create>[0]): Promise<Anthropic.Message> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await client.messages.create(params) as Anthropic.Message;
+    } catch (e) {
+      if (attempt === 2) throw e;
+      const delay = 1000 * 2 ** attempt;
+      console.error(`\nAPI error (attempt ${attempt + 1}/3), retrying in ${delay / 1000}s...`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 async function runTurn(): Promise<void> {
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const response = await client.messages.create({
+  while(true) {
+    const stop = startSpinner("thinking...");
+    const response = await createWithRetry({
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: SYSTEM,
       tools: TOOLS,
       messages,
     });
-    console.log("response", response);
+    stop();
 
     if (response.stop_reason === "end_turn") {
       const text = response.content.find((b) => b.type === "text");
@@ -55,8 +83,6 @@ async function runTurn(): Promise<void> {
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
   }
-
-  console.error("Max turns reached");
 }
 
 while (true) {

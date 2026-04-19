@@ -1,6 +1,7 @@
 import fs from "fs";
 import { spawnSync } from "child_process";
 import type Anthropic from "@anthropic-ai/sdk";
+import { todo, type TodoStatus } from "../todo.js";
 
 export const READ_TOOL: Anthropic.Tool = {
   name: "read_file",
@@ -39,7 +40,42 @@ export const BASH_TOOL: Anthropic.Tool = {
   },
 };
 
-export const TOOLS: Anthropic.Tool[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL];
+export const ADD_TODO_TOOL: Anthropic.Tool = {
+  name: "add_todo",
+  description: "添加一个新任务到 TodoList，返回任务 id。",
+  input_schema: {
+    type: "object",
+    properties: {
+      content: { type: "string", description: "任务描述" },
+    },
+    required: ["content"],
+  },
+};
+
+export const UPDATE_TODO_TOOL: Anthropic.Tool = {
+  name: "update_todo",
+  description: "更新 TodoList 中某个任务的状态。",
+  input_schema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "任务 id" },
+      status: {
+        type: "string",
+        enum: ["pending", "in_progress", "done"],
+        description: "新状态",
+      },
+    },
+    required: ["id", "status"],
+  },
+};
+
+export const TOOLS: Anthropic.Tool[] = [
+  READ_TOOL,
+  WRITE_TOOL,
+  BASH_TOOL,
+  ADD_TODO_TOOL,
+  UPDATE_TODO_TOOL,
+];
 
 type ToolInput = Record<string, string>;
 
@@ -58,6 +94,15 @@ export function executeTool(name: string, input: ToolInput): [string, boolean] {
       });
       if (r.error) return [String(r.error), true];
       return [(r.stdout ?? "") + (r.stderr ?? ""), false];
+    } else if (name === "add_todo") {
+      const item = todo.add(input.content);
+      todo.display();
+      return [JSON.stringify(item), false];
+    } else if (name === "update_todo") {
+      const item = todo.update(input.id, input.status as TodoStatus);
+      if (!item) return [`Todo id ${input.id} not found`, true];
+      todo.display();
+      return [JSON.stringify(item), false];
     } else {
       return [`Unknown tool: ${name}`, true];
     }
