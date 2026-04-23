@@ -4,7 +4,6 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export const MODEL = "claude-opus-4-6";
 export const MAX_TOKENS = 4096;
 export const MAX_TURNS = 20;
 export const SYSTEM =
@@ -16,10 +15,12 @@ const CONFIG_FILE = path.join(__dirname, "..", ".minicc.json");
 interface Config {
   apiKey: string;
   baseUrl?: string;
+  model: string;
+  provider?: "anthropic" | "openai-compat";
 }
 
 export function loadConfig(): Config {
-  let fileConfig: { apiKey?: string; baseUrl?: string } = {};
+  let fileConfig: { apiKey?: string; baseUrl?: string; model?: string; provider?: string } = {};
   try {
     const raw = fs.readFileSync(CONFIG_FILE, "utf-8");
     fileConfig = JSON.parse(raw);
@@ -35,5 +36,10 @@ export function loadConfig(): Config {
     process.exit(1);
   }
 
-  return { apiKey, baseUrl: fileConfig.baseUrl ?? process.env.ANTHROPIC_BASE_URL };
+  return {
+    apiKey,
+    baseUrl: fileConfig.baseUrl ?? process.env.ANTHROPIC_BASE_URL,
+    model: fileConfig.model ?? "claude-opus-4-6",
+    provider: (fileConfig.provider as Config["provider"]) ?? "anthropic",
+  };
 }

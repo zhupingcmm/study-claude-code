@@ -9,7 +9,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^6.34.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

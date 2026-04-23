@@ -1,9 +1,9 @@
 import fs from "fs";
 import { spawnSync } from "child_process";
-import type Anthropic from "@anthropic-ai/sdk";
+import type { ToolDef } from "../providers/interface.js";
 import { todo } from "../todo.js";
 
-export const READ_TOOL: Anthropic.Tool = {
+export const READ_TOOL: ToolDef = {
   name: "read_file",
   description: "读取文件内容，返回文件文本。",
   input_schema: {
@@ -15,7 +15,7 @@ export const READ_TOOL: Anthropic.Tool = {
   },
 };
 
-export const WRITE_TOOL: Anthropic.Tool = {
+export const WRITE_TOOL: ToolDef = {
   name: "write_file",
   description: "将内容写入文件（完整覆写，不做 patch）。",
   input_schema: {
@@ -28,7 +28,7 @@ export const WRITE_TOOL: Anthropic.Tool = {
   },
 };
 
-export const BASH_TOOL: Anthropic.Tool = {
+export const BASH_TOOL: ToolDef = {
   name: "bash_exec",
   description: "执行 shell 命令，返回 stdout + stderr 的合并输出。",
   input_schema: {
@@ -40,7 +40,7 @@ export const BASH_TOOL: Anthropic.Tool = {
   },
 };
 
-export const TODO_TOOL: Anthropic.Tool = {
+export const TODO_TOOL: ToolDef = {
   name: "todo",
   description: "Rewrite the current session plan for multi-step work.",
   input_schema: {
@@ -69,7 +69,7 @@ export const TODO_TOOL: Anthropic.Tool = {
   },
 };
 
-export const TOOLS: Anthropic.Tool[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
+export const TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
 
 type ToolInput = Record<string, unknown>;
 

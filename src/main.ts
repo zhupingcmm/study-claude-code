@@ -1,12 +1,14 @@
-import Anthropic from "@anthropic-ai/sdk";
 import readline from "readline";
 import { TOOLS, executeTool } from "./tools/index.js";
-import { MODEL, MAX_TOKENS, MAX_TURNS, SYSTEM, loadConfig } from "./config.js";
+import { MAX_TOKENS, MAX_TURNS, SYSTEM, loadConfig } from "./config.js";
 import { todo } from "./todo.js";
+import { createProvider } from "./providers/index.js";
+import type { NormalizedMessage, ToolResultItem, TextBlock } from "./providers/interface.js";
 
-const { apiKey, baseUrl } = loadConfig();
-const client = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
-const messages: Anthropic.MessageParam[] = [];
+const { apiKey, baseUrl, model, provider: providerType } = loadConfig();
+const provider = createProvider({ apiKey, baseUrl, provider: providerType });
+// messages 贯穿整个会话，是 agent 的"记忆"
+const messages: NormalizedMessage[] = [];
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
@@ -21,78 +23,70 @@ function startSpinner(label: string): () => void {
   const id = setInterval(() => {
     process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${label}`);
   }, 80);
+  // \r 回到行首，\x1b[2K 清除整行
   return () => {
     clearInterval(id);
     process.stdout.write("\r\x1b[2K");
   };
 }
 
-async function createWithRetry(params: Parameters<typeof client.messages.create>[0]): Promise<Anthropic.Message> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await client.messages.create(params) as Anthropic.Message;
-    } catch (e) {
-      if (attempt === 2) throw e;
-      const delay = 1000 * 2 ** attempt;
-      console.error(`\nAPI error (attempt ${attempt + 1}/3), retrying in ${delay / 1000}s...`);
-      await new Promise((r) => setTimeout(r, delay));
-    }
-  }
-  throw new Error("unreachable");
-}
-
+// 内层循环：持续调用 LLM，直到它停止调用工具（end_turn）
 async function runTurn(): Promise<void> {
   while(true) {
     const stop = startSpinner("thinking...");
-    const response = await createWithRetry({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
+    const response = await provider.complete({
+      model,
+      maxTokens: MAX_TOKENS,
       system: SYSTEM,
       tools: TOOLS,
       messages,
     });
     stop();
 
-    if (response.stop_reason === "end_turn") {
+    // LLM 完成当前任务，把最终回复推入历史并返回外层 REPL
+    if (response.stopReason === "end_turn") {
       const text = response.content.find((b) => b.type === "text");
       console.log(`\nassistant> ${text?.text ?? "(no text)"}\n`);
       messages.push({ role: "assistant", content: response.content });
       return;
     }
 
-    if (response.stop_reason !== "tool_use") {
-      console.error(`Unexpected stop_reason: ${response.stop_reason}`);
+    if (response.stopReason !== "tool_use") {
+      console.error(`Unexpected stop_reason: ${response.stopReason}`);
       return;
     }
 
-    const toolResults: Array<Anthropic.ToolResultBlockParam | Anthropic.TextBlockParam> = [];
+    const toolResults: Array<ToolResultItem | TextBlock> = [];
     let usedTodo = false;
 
     for (const block of response.content) {
-      if (block.type !== "tool_use") continue;
-      const input = block.input as Record<string, unknown>;
-      const [output, isError] = executeTool(block.name, input);
+      if (block.type !== "tool_call") continue;
+      const [output, isError] = executeTool(block.name, block.input);
       console.log(`  → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
       toolResults.push({
         type: "tool_result",
-        tool_use_id: block.id,
+        tool_call_id: block.id,
         content: output,
         is_error: isError,
       });
       if (block.name === "todo") usedTodo = true;
     }
 
+    // 超过 PLAN_REMINDER_INTERVAL 轮没有更新 todo，在结果前注入提醒
     if (!usedTodo) {
       todo.noteRoundWithoutUpdate();
       const reminder = todo.reminder();
       if (reminder) toolResults.unshift({ type: "text", text: reminder });
     }
 
+    // 必须同时推入 assistant（含 tool_call 块）和 user（含 tool_result），
+    // 否则 API 会因消息序列不完整而报错
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
   }
 }
 
+// 外层 REPL：每次输入独立触发一轮 agent loop，messages 跨轮保留
 while (true) {
   const input = await ask("you> ");
   const trimmed = input.trim();
