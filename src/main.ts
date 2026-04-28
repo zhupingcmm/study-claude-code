@@ -1,9 +1,11 @@
 import readline from "readline";
-import { TOOLS, executeTool } from "./tools/index.js";
+import { PARENT_TOOLS, executeTool } from "./tools/index.js";
 import { MAX_TOKENS, MAX_TURNS, SYSTEM, loadConfig } from "./config.js";
 import { todo } from "./todo.js";
 import { createProvider } from "./providers/index.js";
 import type { NormalizedMessage, ToolResultItem, TextBlock } from "./providers/interface.js";
+import { startSpinner } from "./ui.js";
+import { runSubagent } from "./subagent.js";
 
 const { apiKey, baseUrl, model, provider: providerType } = loadConfig();
 const provider = createProvider({ apiKey, baseUrl, provider: providerType });
@@ -16,19 +18,6 @@ function ask(prompt: string): Promise<string> {
   return new Promise((resolve) => rl.question(prompt, resolve));
 }
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-function startSpinner(label: string): () => void {
-  let i = 0;
-  const id = setInterval(() => {
-    process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${label}`);
-  }, 80);
-  // \r 回到行首，\x1b[2K 清除整行
-  return () => {
-    clearInterval(id);
-    process.stdout.write("\r\x1b[2K");
-  };
-}
 
 // 内层循环：持续调用 LLM，直到它停止调用工具（end_turn）
 async function runTurn(): Promise<void> {
@@ -38,7 +27,7 @@ async function runTurn(): Promise<void> {
       model,
       maxTokens: MAX_TOKENS,
       system: SYSTEM,
-      tools: TOOLS,
+      tools: PARENT_TOOLS,
       messages,
     });
     stop();
@@ -61,14 +50,22 @@ async function runTurn(): Promise<void> {
 
     for (const block of response.content) {
       if (block.type !== "tool_call") continue;
-      const [output, isError] = executeTool(block.name, block.input);
-      console.log(`  → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
-      toolResults.push({
-        type: "tool_result",
-        tool_call_id: block.id,
-        content: output,
-        is_error: isError,
-      });
+
+      let output: string;
+      let isError = false;
+
+      if (block.name === "task") {
+        const taskInput = block.input as { prompt: string; description?: string };
+        const desc = taskInput.description ?? "subagent";
+        console.log(`  → [task] spawning: ${desc}`);
+        output = await runSubagent(taskInput.prompt, provider, model);
+        console.log(`  → [task] done: ${output.slice(0, 200)}`);
+      } else {
+        [output, isError] = executeTool(block.name, block.input);
+        console.log(`  → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
+      }
+
+      toolResults.push({ type: "tool_result", tool_call_id: block.id, content: output, is_error: isError });
       if (block.name === "todo") usedTodo = true;
     }
 

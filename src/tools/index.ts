@@ -69,7 +69,23 @@ export const TODO_TOOL: ToolDef = {
   },
 };
 
-export const TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
+export const CHILD_TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
+
+export const TASK_TOOL: ToolDef = {
+  name: "task",
+  description:
+    "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
+  input_schema: {
+    type: "object",
+    properties: {
+      prompt:      { type: "string" },
+      description: { type: "string", description: "Short description of the task" },
+    },
+    required: ["prompt"],
+  },
+};
+
+export const PARENT_TOOLS: ToolDef[] = [...CHILD_TOOLS, TASK_TOOL];
 
 type ToolInput = Record<string, unknown>;
 

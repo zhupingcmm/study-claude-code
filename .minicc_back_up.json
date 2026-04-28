@@ -1,0 +1,6 @@
+{
+  "apiKey": "sk_THHJ9PnkhFhGJ-AYDpFfv8p2gh2Znz7JFifcB2Nz4Nc",
+  "baseUrl": "http://localhost:11434/v1",
+  "model": "qwen3.5:9b",
+  "provider": "openai-compat"
+}
