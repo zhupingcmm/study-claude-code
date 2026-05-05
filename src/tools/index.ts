@@ -2,6 +2,7 @@ import fs from "fs";
 import { spawnSync } from "child_process";
 import type { ToolDef } from "../providers/interface.js";
 import { todo } from "../todo.js";
+import { SKILL_REGISTRY } from "../skills.js";
 
 export const READ_TOOL: ToolDef = {
   name: "read_file",
@@ -69,7 +70,19 @@ export const TODO_TOOL: ToolDef = {
   },
 };
 
-export const CHILD_TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL];
+export const LOAD_SKILL_TOOL: ToolDef = {
+  name: "load_skill",
+  description: "Load the full body of a named skill into the current context.",
+  input_schema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+    },
+    required: ["name"],
+  },
+};
+
+export const CHILD_TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL, LOAD_SKILL_TOOL];
 
 export const TASK_TOOL: ToolDef = {
   name: "task",
@@ -108,6 +121,8 @@ export function executeTool(name: string, input: ToolInput): [string, boolean] {
       const result = todo.update(input.items as unknown[]);
       console.log("\n" + result);
       return [result, false];
+    } else if (name === "load_skill") {
+      return [SKILL_REGISTRY.loadFullText(input.name as string), false];
     } else {
       return [`Unknown tool: ${name}`, true];
     }

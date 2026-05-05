@@ -1,8 +1,18 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { executeTool } from "../src/tools/index.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
+
+vi.mock("../src/skills.js", () => ({
+  SKILL_REGISTRY: {
+    loadFullText: (name: string) =>
+      name === "deploy"
+        ? '<skill name="deploy">\nRun deploy.\n</skill>'
+        : `Error: Unknown skill '${name}'. Available skills: deploy`,
+    describeAvailable: () => "- deploy: Deploy the app",
+  },
+}));
 
 const tmpFile = path.join(os.tmpdir(), "minicc-test-tool.txt");
 const nonexistentPath = path.join(os.tmpdir(), "minicc_no_such_dir_12345", "file.txt");
@@ -63,5 +73,20 @@ describe("executeTool — unknown tool", () => {
     const [output, isError] = executeTool("nonexistent_tool", { foo: "bar" });
     expect(isError).toBe(true);
     expect(output).toContain("Unknown tool");
+  });
+});
+
+describe("executeTool — load_skill", () => {
+  it("returns skill body for a known skill", () => {
+    const [output, isError] = executeTool("load_skill", { name: "deploy" });
+    expect(isError).toBe(false);
+    expect(output).toContain('<skill name="deploy">');
+    expect(output).toContain("Run deploy.");
+  });
+
+  it("returns error message for an unknown skill", () => {
+    const [output, isError] = executeTool("load_skill", { name: "no-such-skill" });
+    expect(isError).toBe(false);  // registry error is content, not an execution error
+    expect(output).toMatch(/Error: Unknown skill 'no-such-skill'/);
   });
 });

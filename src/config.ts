@@ -1,14 +1,16 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { SKILL_REGISTRY } from "./skills.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const MAX_TOKENS = 4096;
 export const MAX_TURNS = 20;
 export const SYSTEM =
-  `You are a coding agent at ${process.cwd()}. ` +
-  "Use bash to inspect and change the workspace. Act first, then report clearly.";
+  `You are a coding agent at ${process.cwd()}.\n` +
+  `Use load_skill when a task needs specialized instructions before you act.\n\n` +
+  `Skills available:\n${SKILL_REGISTRY.describeAvailable()}`;
 
 const CONFIG_FILE = path.join(__dirname, "..", ".minicc.json");
 

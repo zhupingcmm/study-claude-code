@@ -10,7 +10,7 @@ export async function runSubagent(
 ): Promise<string> {
   const subMessages: NormalizedMessage[] = [{ role: "user", content: prompt }];
   let lastResponse: LLMResponse | null = null;
-
+  // 最多启动30 个 sub agent 来执行任务
   for (let i = 0; i < 30; i++) {
     const stop = startSpinner("  [subagent] thinking...");
     const response = await provider.complete({
@@ -25,10 +25,12 @@ export async function runSubagent(
     lastResponse = response;
     subMessages.push({ role: "assistant", content: response.content });
 
+    // 如果 LLM 回复的 stopReason 不是 tool_use 那就跳出当前循环
     if (response.stopReason !== "tool_use") break;
 
     const toolResults: ToolResultItem[] = [];
     for (const block of response.content) {
+      // 如果 block.type 不是 tool_call 跳出当前循环
       if (block.type !== "tool_call") continue;
       const [output, isError] = executeTool(block.name, block.input);
       console.log(`    [sub] → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
@@ -37,6 +39,7 @@ export async function runSubagent(
     subMessages.push({ role: "user", content: toolResults });
   }
 
+  // 将最后LLM 的回复 的内容返回出去
   const text = lastResponse?.content.find((b) => b.type === "text");
   return (text as TextBlock | undefined)?.text ?? "(no summary)";
 }
