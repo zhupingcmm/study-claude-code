@@ -1,7 +1,8 @@
 import fs from "fs";
 import { spawnSync } from "child_process";
 import type { ToolDef } from "../providers/interface.js";
-import { todo } from "../todo.js";
+import { tasks } from "../todo.js";
+import type { TaskStatus } from "../todo.js";
 import { SKILL_REGISTRY } from "../skills.js";
 
 export const READ_TOOL: ToolDef = {
@@ -41,32 +42,49 @@ export const BASH_TOOL: ToolDef = {
   },
 };
 
-export const TODO_TOOL: ToolDef = {
-  name: "todo",
-  description: "Rewrite the current session plan for multi-step work.",
+export const TASK_CREATE_TOOL: ToolDef = {
+  name: "task_create",
+  description: "Create a new persistent task.",
   input_schema: {
     type: "object",
     properties: {
-      items: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            content: { type: "string" },
-            status: {
-              type: "string",
-              enum: ["pending", "in_progress", "completed"],
-            },
-            activeForm: {
-              type: "string",
-              description: "Optional present-continuous label.",
-            },
-          },
-          required: ["content", "status"],
-        },
-      },
+      subject:     { type: "string" },
+      description: { type: "string" },
     },
-    required: ["items"],
+    required: ["subject"],
+  },
+};
+
+export const TASK_UPDATE_TOOL: ToolDef = {
+  name: "task_update",
+  description: "Update a task's status or dependency list.",
+  input_schema: {
+    type: "object",
+    properties: {
+      task_id:         { type: "integer" },
+      status:          { type: "string", enum: ["pending", "in_progress", "completed"] },
+      addBlockedBy:    { type: "array", items: { type: "integer" } },
+      removeBlockedBy: { type: "array", items: { type: "integer" } },
+    },
+    required: ["task_id"],
+  },
+};
+
+export const TASK_LIST_TOOL: ToolDef = {
+  name: "task_list",
+  description: "List all tasks with status and dependency summary.",
+  input_schema: { type: "object", properties: {} },
+};
+
+export const TASK_GET_TOOL: ToolDef = {
+  name: "task_get",
+  description: "Get full details of a task by ID.",
+  input_schema: {
+    type: "object",
+    properties: {
+      task_id: { type: "integer" },
+    },
+    required: ["task_id"],
   },
 };
 
@@ -82,7 +100,10 @@ export const LOAD_SKILL_TOOL: ToolDef = {
   },
 };
 
-export const CHILD_TOOLS: ToolDef[] = [READ_TOOL, WRITE_TOOL, BASH_TOOL, TODO_TOOL, LOAD_SKILL_TOOL];
+export const CHILD_TOOLS: ToolDef[] = [
+  READ_TOOL, WRITE_TOOL, BASH_TOOL, LOAD_SKILL_TOOL,
+  TASK_CREATE_TOOL, TASK_UPDATE_TOOL, TASK_LIST_TOOL, TASK_GET_TOOL,
+];
 
 export const TASK_TOOL: ToolDef = {
   name: "task",
@@ -98,7 +119,18 @@ export const TASK_TOOL: ToolDef = {
   },
 };
 
-export const PARENT_TOOLS: ToolDef[] = [...CHILD_TOOLS, TASK_TOOL];
+export const COMPACT_TOOL: ToolDef = {
+  name: "compact",
+  description: "Summarize earlier conversation so work can continue in a smaller context.",
+  input_schema: {
+    type: "object",
+    properties: {
+      focus: { type: "string", description: "What to prioritize preserving in the summary" },
+    },
+  },
+};
+
+export const PARENT_TOOLS: ToolDef[] = [...CHILD_TOOLS, TASK_TOOL, COMPACT_TOOL];
 
 type ToolInput = Record<string, unknown>;
 
@@ -117,10 +149,19 @@ export function executeTool(name: string, input: ToolInput): [string, boolean] {
       });
       if (r.error) return [String(r.error), true];
       return [(r.stdout ?? "") + (r.stderr ?? ""), false];
-    } else if (name === "todo") {
-      const result = todo.update(input.items as unknown[]);
-      console.log("\n" + result);
-      return [result, false];
+    } else if (name === "task_create") {
+      return [tasks.create(input.subject as string, input.description as string | undefined), false];
+    } else if (name === "task_update") {
+      return [tasks.update(
+        input.task_id as number,
+        input.status as TaskStatus | undefined,
+        input.addBlockedBy as number[] | undefined,
+        input.removeBlockedBy as number[] | undefined,
+      ), false];
+    } else if (name === "task_list") {
+      return [tasks.listAll(), false];
+    } else if (name === "task_get") {
+      return [tasks.get(input.task_id as number), false];
     } else if (name === "load_skill") {
       return [SKILL_REGISTRY.loadFullText(input.name as string), false];
     } else {

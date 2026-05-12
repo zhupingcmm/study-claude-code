@@ -14,11 +14,24 @@ vi.mock("../src/skills.js", () => ({
   },
 }));
 
+const taskCalls: Record<string, unknown[][]> = {
+  create: [], get: [], update: [], listAll: [],
+};
+vi.mock("../src/todo.js", () => ({
+  tasks: {
+    create: (...args: unknown[]) => { taskCalls.create.push(args); return `created:${JSON.stringify(args)}`; },
+    get: (...args: unknown[]) => { taskCalls.get.push(args); return `got:${JSON.stringify(args)}`; },
+    update: (...args: unknown[]) => { taskCalls.update.push(args); return `updated:${JSON.stringify(args)}`; },
+    listAll: (...args: unknown[]) => { taskCalls.listAll.push(args); return "list-result"; },
+  },
+}));
+
 const tmpFile = path.join(os.tmpdir(), "minicc-test-tool.txt");
 const nonexistentPath = path.join(os.tmpdir(), "minicc_no_such_dir_12345", "file.txt");
 
 afterEach(() => {
   try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  for (const k of Object.keys(taskCalls)) taskCalls[k].length = 0;
 });
 
 describe("executeTool — read_file", () => {
@@ -88,5 +101,59 @@ describe("executeTool — load_skill", () => {
     const [output, isError] = executeTool("load_skill", { name: "no-such-skill" });
     expect(isError).toBe(false);  // registry error is content, not an execution error
     expect(output).toMatch(/Error: Unknown skill 'no-such-skill'/);
+  });
+});
+
+describe("executeTool — task_create", () => {
+  it("forwards subject and description to tasks.create", () => {
+    const [output, isError] = executeTool("task_create", {
+      subject: "Setup project", description: "init repo",
+    });
+    expect(isError).toBe(false);
+    expect(output).toContain("created");
+    expect(taskCalls.create).toEqual([["Setup project", "init repo"]]);
+  });
+
+  it("works when description is omitted", () => {
+    const [, isError] = executeTool("task_create", { subject: "only subject" });
+    expect(isError).toBe(false);
+    expect(taskCalls.create).toEqual([["only subject", undefined]]);
+  });
+});
+
+describe("executeTool — task_update", () => {
+  it("forwards id, status, and blockedBy mutations", () => {
+    const [output, isError] = executeTool("task_update", {
+      task_id: 3,
+      status: "in_progress",
+      addBlockedBy: [1, 2],
+      removeBlockedBy: [5],
+    });
+    expect(isError).toBe(false);
+    expect(output).toContain("updated");
+    expect(taskCalls.update).toEqual([[3, "in_progress", [1, 2], [5]]]);
+  });
+
+  it("passes undefined for optional fields when absent", () => {
+    executeTool("task_update", { task_id: 7 });
+    expect(taskCalls.update).toEqual([[7, undefined, undefined, undefined]]);
+  });
+});
+
+describe("executeTool — task_list", () => {
+  it("calls tasks.listAll with no arguments", () => {
+    const [output, isError] = executeTool("task_list", {});
+    expect(isError).toBe(false);
+    expect(output).toBe("list-result");
+    expect(taskCalls.listAll).toEqual([[]]);
+  });
+});
+
+describe("executeTool — task_get", () => {
+  it("forwards task_id to tasks.get", () => {
+    const [output, isError] = executeTool("task_get", { task_id: 42 });
+    expect(isError).toBe(false);
+    expect(output).toContain("got");
+    expect(taskCalls.get).toEqual([[42]]);
   });
 });

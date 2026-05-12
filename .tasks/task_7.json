@@ -1,0 +1,11 @@
+{
+  "id": 7,
+  "subject": "Test",
+  "description": "Refactoring phase: test stage (after Transform and Emit complete)",
+  "status": "pending",
+  "blockedBy": [
+    5,
+    6
+  ],
+  "owner": ""
+}

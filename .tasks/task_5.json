@@ -1,0 +1,10 @@
+{
+  "id": 5,
+  "subject": "Transform",
+  "description": "Refactoring phase: transform stage (can run in parallel with Emit)",
+  "status": "pending",
+  "blockedBy": [
+    4
+  ],
+  "owner": ""
+}

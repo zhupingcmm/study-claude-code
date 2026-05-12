@@ -33,7 +33,8 @@ export async function runSubagent(
       // 如果 block.type 不是 tool_call 跳出当前循环
       if (block.type !== "tool_call") continue;
       const [output, isError] = executeTool(block.name, block.input);
-      console.log(`    [sub] → ${block.name} ${isError ? "ERROR" : "OK"}: ${output.slice(0, 200)}`);
+      const preview = output.slice(0, 300).replace(/^/gm, "         ");
+      console.log(`    [sub] → ${block.name} ${isError ? "ERROR" : "OK"}:\n${preview}`);
       toolResults.push({ type: "tool_result", tool_call_id: block.id, content: output, is_error: isError });
     }
     subMessages.push({ role: "user", content: toolResults });

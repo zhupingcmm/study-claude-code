@@ -1,79 +1,123 @@
-export type TodoStatus = "pending" | "in_progress" | "completed";
+import fs from "fs";
+import path from "path";
 
-export interface PlanItem {
-  content: string;
-  status: TodoStatus;
-  activeForm?: string;
+export type TaskStatus = "pending" | "in_progress" | "completed";
+
+export interface Task {
+  id: number;
+  subject: string;
+  description: string;
+  status: TaskStatus;
+  blockedBy: number[];
+  owner: string;
 }
 
-const PLAN_REMINDER_INTERVAL = 3;
-const MAX_ITEMS = 12;
-
-const MARKER: Record<TodoStatus, string> = {
+const MARKER: Record<TaskStatus, string> = {
   pending: "[ ]",
   in_progress: "[>]",
   completed: "[x]",
 };
 
-export class TodoManager {
-  private items: PlanItem[] = [];
-  private roundsSinceUpdate = 0;
+export class TaskManager {
+  private dir: string;
+  private nextId: number;
 
-  update(rawItems: unknown[]): string {
-    if (rawItems.length > MAX_ITEMS) {
-      throw new Error(`Keep the session plan short (max ${MAX_ITEMS} items)`);
+  constructor(tasksDir: string) {
+    this.dir = tasksDir;
+    fs.mkdirSync(tasksDir, { recursive: true });
+    this.nextId = this._maxId() + 1;
+  }
+
+  private _filePath(id: number): string {
+    return path.join(this.dir, `task_${id}.json`);
+  }
+
+  private _maxId(): number {
+    try {
+      const ids = fs.readdirSync(this.dir)
+        .filter((f) => /^task_\d+\.json$/.test(f))
+        .map((f) => parseInt(f.match(/\d+/)![0], 10));
+      return ids.length ? Math.max(...ids) : 0;
+    } catch {
+      return 0;
     }
+  }
 
-    const normalized: PlanItem[] = [];
-    let inProgressCount = 0;
+  private _load(id: number): Task {
+    const p = this._filePath(id);
+    if (!fs.existsSync(p)) throw new Error(`Task ${id} not found`);
+    return JSON.parse(fs.readFileSync(p, "utf-8"));
+  }
 
-    for (let i = 0; i < rawItems.length; i++) {
-      const raw = rawItems[i] as Record<string, unknown>;
-      const content = String(raw.content ?? "").trim();
-      const status = String(raw.status ?? "pending").toLowerCase() as TodoStatus;
-      const activeForm = String(raw.activeForm ?? "").trim();
+  private _save(task: Task): void {
+    fs.writeFileSync(this._filePath(task.id), JSON.stringify(task, null, 2), "utf-8");
+  }
 
-      if (!content) throw new Error(`Item ${i}: content required`);
+  // 完成某任务后，从其他任务的 blockedBy 中移除它
+  private _clearDependency(completedId: number): void {
+    try {
+      for (const f of fs.readdirSync(this.dir).filter((f) => /^task_\d+\.json$/.test(f))) {
+        const task: Task = JSON.parse(fs.readFileSync(path.join(this.dir, f), "utf-8"));
+        if (task.blockedBy.includes(completedId)) {
+          task.blockedBy = task.blockedBy.filter((x) => x !== completedId);
+          this._save(task);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  create(subject: string, description = ""): string {
+    const task: Task = {
+      id: this.nextId++,
+      subject,
+      description,
+      status: "pending",
+      blockedBy: [],
+      owner: "",
+    };
+    this._save(task);
+    return JSON.stringify(task, null, 2);
+  }
+
+  get(id: number): string {
+    return JSON.stringify(this._load(id), null, 2);
+  }
+
+  update(id: number, status?: TaskStatus, addBlockedBy?: number[], removeBlockedBy?: number[]): string {
+    const task = this._load(id);
+    if (status) {
       if (!["pending", "in_progress", "completed"].includes(status)) {
-        throw new Error(`Item ${i}: invalid status '${status}'`);
+        throw new Error(`Invalid status: ${status}`);
       }
-      if (status === "in_progress") inProgressCount++;
-
-      normalized.push({ content, status, ...(activeForm ? { activeForm } : {}) });
+      task.status = status;
+      if (status === "completed") this._clearDependency(id);
     }
-
-    if (inProgressCount > 1) throw new Error("Only one plan item can be in_progress");
-
-    this.items = normalized;
-    this.roundsSinceUpdate = 0;
-    return this.render();
+    if (addBlockedBy?.length) {
+      task.blockedBy = [...new Set([...task.blockedBy, ...addBlockedBy])];
+    }
+    if (removeBlockedBy?.length) {
+      task.blockedBy = task.blockedBy.filter((x) => !removeBlockedBy.includes(x));
+    }
+    this._save(task);
+    return JSON.stringify(task, null, 2);
   }
 
-  noteRoundWithoutUpdate(): void {
-    this.roundsSinceUpdate++;
-  }
-
-  reminder(): string | null {
-    if (!this.items.length) return null;
-    if (this.roundsSinceUpdate < PLAN_REMINDER_INTERVAL) return null;
-    return "<reminder>Refresh your current plan before continuing.</reminder>";
-  }
-
-  render(): string {
-    if (!this.items.length) return "No session plan yet.";
-
-    const lines = this.items.map((item) => {
-      let line = `${MARKER[item.status]} ${item.content}`;
-      if (item.status === "in_progress" && item.activeForm) {
-        line += ` (${item.activeForm})`;
-      }
-      return line;
-    });
-
-    const completed = this.items.filter((i) => i.status === "completed").length;
-    lines.push(`\n(${completed}/${this.items.length} completed)`);
-    return lines.join("\n");
+  listAll(): string {
+    let files: string[];
+    try {
+      files = fs.readdirSync(this.dir)
+        .filter((f) => /^task_\d+\.json$/.test(f))
+        .sort((a, b) => parseInt(a.match(/\d+/)![0], 10) - parseInt(b.match(/\d+/)![0], 10));
+    } catch {
+      return "No tasks.";
+    }
+    if (!files.length) return "No tasks.";
+    return files.map((f) => {
+      const t: Task = JSON.parse(fs.readFileSync(path.join(this.dir, f), "utf-8"));
+      const blocked = t.blockedBy.length ? ` (blocked by: ${JSON.stringify(t.blockedBy)})` : "";
+      return `${MARKER[t.status]} #${t.id}: ${t.subject}${blocked}`;
+    }).join("\n");
   }
 }
 
-export const todo = new TodoManager();
+export const tasks = new TaskManager(path.join(process.cwd(), ".tasks"));
